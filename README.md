@@ -5,5 +5,3 @@
 * 사용언어 : R version 4.1.0
 * 코드 : 링크
 * 설명자료 : 링크
-* 분석기법 : 군집분석(K-means, K-mediods, GMM Clustering), AHP 분석, SNS 분석(인스타그램 크롤링)
-* * *
