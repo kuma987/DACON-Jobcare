@@ -1,0 +1,24 @@
+---
+title: "링크테스트"
+author: 'kuma987'
+date: "`r format(Sys.time(), '%Y년 %B %d일')`"
+output:
+  html_document: 
+    fig_height: 6
+    fig_width: 10
+    highlight: textmate
+    toc: yes
+    toc_float: yes
+  word_document:
+    highlight: tango
+    reference_docx: korean-template.docx
+  pdf_document:
+    latex_engine: xelatex
+mainfont: NanumGothic
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+[링크](https://kuma987.github.io/DACON-Jobcare/설명자료.md){:target="_blank"}
