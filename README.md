@@ -3,8 +3,8 @@
 -------------
 * 개발환경 : MacBook Air (M1, 2020)
 * 사용언어 : R version 4.1.0
-* 코드 : 링크
-* <a href = "https://github.com/kuma987/DACON-Jobcare/blob/main/%EC%84%A4%EB%AA%85%EC%9E%90%EB%A3%8C.md" target="_blank">설명자료</a>
+* [코드]()
+* [설명자료](https://github.com/kuma987/DACON-Jobcare/blob/main/%EC%84%A4%EB%AA%85%EC%9E%90%EB%A3%8C.md)
 
 참고사항
 -------------
