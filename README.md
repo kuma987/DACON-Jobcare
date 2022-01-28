@@ -3,7 +3,7 @@
 -------------
 * 개발환경 : MacBook Air (M1, 2020)
 * 사용언어 : R version 4.1.0
-* [코드](https://kuma987.github.io/DACON-Jobcare/)
+* [코드](https://kuma987.github.io/DACON-Jobcare/링크테스트.html)
 * [설명자료](https://github.com/kuma987/DACON-Jobcare/blob/main/%EC%84%A4%EB%AA%85%EC%9E%90%EB%A3%8C.md)
 
 참고사항
