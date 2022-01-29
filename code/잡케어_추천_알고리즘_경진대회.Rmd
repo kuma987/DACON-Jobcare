@@ -1,0 +1,415 @@
+---
+title: "잡케어 추천 알고리즘 경진대회"
+author: 'kuma987'
+date: "`r format(Sys.time(), '%Y년 %B %d일')`"
+output:
+  html_document: 
+    fig_height: 6
+    fig_width: 10
+    highlight: textmate
+    toc: yes
+    toc_float: yes
+  word_document:
+    highlight: tango
+    reference_docx: korean-template.docx
+  pdf_document:
+    latex_engine: xelatex
+mainfont: NanumGothic
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 사용 패키지
+```{r, results='hide'}
+library(dplyr)
+library(dlookr)
+library(tidyr)
+library(ggplot2)
+library(caret)
+library(C50)
+library(ROCR)
+```
+
+
+# 데이터 불러오기 
+<a href = "https://github.com/kuma987/DACON-Jobcare/blob/main/%EC%84%A4%EB%AA%85%EC%9E%90%EB%A3%8C.md#%EB%8D%B0%EC%9D%B4%ED%84%B0-%EC%84%A4%EB%AA%85%EC%84%9C" target="_blank"> 데이터 설명서 </a>
+```{r}
+train <- read.csv('/Users/JGH/Desktop/dacon/Jobcare/raw/train.csv')
+test <- read.csv('/Users/JGH/Desktop/dacon/Jobcare/raw/test.csv')
+d_code <- read.csv('/Users/JGH/Desktop/dacon/Jobcare/raw/속성_D_코드.csv')
+h_code <- read.csv('/Users/JGH/Desktop/dacon/Jobcare/raw/속성_H_코드.csv')
+l_code <- read.csv('/Users/JGH/Desktop/dacon/Jobcare/raw/속성_L_코드.csv')
+colnames(d_code) <- gsub('\\.','_',colnames(d_code))
+colnames(h_code) <- gsub('\\.','_',colnames(h_code))
+colnames(l_code) <- gsub('\\.','_',colnames(l_code))
+head(train)
+head(test)
+head(d_code)
+head(h_code)
+head(l_code)
+```
+
+# 분류모델 선정
+의사결정나무 모델 중 하나인 C5.0 모델을 이용  
+<a href = "https://github.com/kuma987/DACON-Jobcare/blob/main/%EC%84%A4%EB%AA%85%EC%9E%90%EB%A3%8C.md#c50-%EB%AA%A8%EB%8D%B8-%EC%84%A0%EC%A0%95-%EC%9D%B4%EC%9C%A0" target="_blank"> C5.0 모델 설정 이유 </a>
+
+# 데이터 전처리
+## 결측치
+```{r}
+sum(is.na(train))
+sum(is.na(test))
+```
+결측치가 존재하지 않기 때문에 추가적인 전처리 없이 다음 단계로 이동
+
+## 속성 코드 변경
+<a href = "https://github.com/kuma987/DACON-Jobcare/blob/main/%EC%84%A4%EB%AA%85%EC%9E%90%EB%A3%8C.md#%EC%86%8D%EC%84%B1-%EC%BD%94%EB%93%9C-%EB%B3%80%EA%B2%BD-%EC%9D%B4%EC%9C%A0" target="_blank"> 속성 코드 변경 이유 </a>
+
+### 속성 코드의 경우
+```{r}
+code_list1 <- c('person_prefer_d_1', 'person_prefer_d_2', 'person_prefer_d_3',
+               'contents_attribute_d', 'person_prefer_h_1', 'person_prefer_h_2', 'person_prefer_h_3',
+               'contents_attribute_h', 'contents_attribute_l')
+for (i in code_list1) {
+  train[,i] <- factor(train[,i])
+}
+for (i in code_list1) {
+  test[,i] <- factor(test[,i])
+}
+```
+
+
+```{r}
+NROW(levels(test$person_prefer_d_1))
+sum(levels(test$person_prefer_d_1) %in% levels(train$person_prefer_d_1))
+```
+person_prefer_d_1의 변수만 살펴봐도, test 데이터에는 955개의 레벨이 존재하지만, 954개의 레벨이 train 데이터에도 존재하고 1개의 데이터는 test 데이터에만 존재  
+이에 따라 예측 수행 불가능 
+
+```{r}
+NROW(levels(test$person_prefer_d_2)) == sum(levels(test$person_prefer_d_2) %in% levels(train$person_prefer_d_2))
+NROW(levels(test$person_prefer_d_3)) == sum(levels(test$person_prefer_d_3) %in% levels(train$person_prefer_d_3))
+NROW(levels(test$contents_attribute_d)) == sum(levels(test$contents_attribute_d) %in% levels(train$contents_attribute_d))
+NROW(levels(test$person_prefer_h_1)) == sum(levels(test$person_prefer_h_1) %in% levels(train$person_prefer_h_1))
+NROW(levels(test$person_prefer_h_2)) == sum(levels(test$person_prefer_h_2) %in% levels(train$person_prefer_h_2))
+NROW(levels(test$person_prefer_h_3)) == sum(levels(test$person_prefer_h_3) %in% levels(train$person_prefer_h_3))
+NROW(levels(test$contents_attribute_h)) == sum(levels(test$contents_attribute_h) %in% levels(train$contents_attribute_h))
+NROW(levels(test$contents_attribute_l)) == sum(levels(test$contents_attribute_l) %in% levels(train$contents_attribute_l))
+```
+H 코드가 사용된 변수의 경우 예측 모델 수행에 문제가 없으나, D와 L 코드가 사용된 변수의 경우 변경이 필요
+
+### 속성 세분류 코드의 경우
+```{r}
+train <- read.csv('/Users/JGH/Desktop/dacon/Jobcare/raw/train.csv')
+test <- read.csv('/Users/JGH/Desktop/dacon/Jobcare/raw/test.csv')
+```
+
+```{r}
+train_s <- train
+for (i in 1:NROW(train_s)){
+  train_s$person_prefer_d_1[i] <- d_code[which(train_s$person_prefer_d_1[i]==d_code$속성_D_코드),'속성_D_세분류코드']
+  train_s$person_prefer_d_2[i] <- d_code[which(train_s$person_prefer_d_2[i]==d_code$속성_D_코드),'속성_D_세분류코드']
+  train_s$person_prefer_d_3[i] <- d_code[which(train_s$person_prefer_d_3[i]==d_code$속성_D_코드),'속성_D_세분류코드']
+  train_s$contents_attribute_d[i] <- d_code[which(train_s$contents_attribute_d[i]==d_code$속성_D_코드),'속성_D_세분류코드']
+  train_s$contents_attribute_l[i] <- l_code[which(train_s$contents_attribute_l[i]==l_code$속성_L_코드),'속성_L_세분류코드']
+}
+
+test_s <- test
+for (i in 1:NROW(test_s)){
+  test_s$person_prefer_d_1[i] <- d_code[which(test_s$person_prefer_d_1[i]==d_code$속성_D_코드),'속성_D_세분류코드']
+  test_s$person_prefer_d_2[i] <- d_code[which(test_s$person_prefer_d_2[i]==d_code$속성_D_코드),'속성_D_세분류코드']
+  test_s$person_prefer_d_3[i] <- d_code[which(test_s$person_prefer_d_3[i]==d_code$속성_D_코드),'속성_D_세분류코드']
+  test_s$contents_attribute_d[i] <- d_code[which(test_s$contents_attribute_d[i]==d_code$속성_D_코드),'속성_D_세분류코드']
+  test_s$contents_attribute_l[i] <- l_code[which(test_s$contents_attribute_l[i]==l_code$속성_L_코드),'속성_L_세분류코드']
+}
+
+code_list2 <- c('person_prefer_d_1', 'person_prefer_d_2', 'person_prefer_d_3',
+               'contents_attribute_d', 'contents_attribute_l')
+for (i in code_list2) {
+  train_s[,i] <- factor(train_s[,i])
+}
+for (i in code_list2) {
+  test_s[,i] <- factor(test_s[,i])
+}
+
+NROW(levels(test_s$person_prefer_d_1)) == sum(levels(test_s$person_prefer_d_1) %in% levels(train_s$person_prefer_d_1))
+NROW(levels(test_s$person_prefer_d_2)) == sum(levels(test_s$person_prefer_d_2) %in% levels(train_s$person_prefer_d_2))
+NROW(levels(test_s$person_prefer_d_3)) == sum(levels(test_s$person_prefer_d_3) %in% levels(train_s$person_prefer_d_3))
+NROW(levels(test_s$contents_attribute_d)) == sum(levels(test_s$contents_attribute_d) %in% levels(train_s$contents_attribute_d))
+NROW(levels(test_s$contents_attribute_l)) == sum(levels(test_s$contents_attribute_l) %in% levels(train_s$contents_attribute_l))
+```
+D와 L 코드가 사용된 변수의 속성 코드를 속성 세분류 코드로 변경하여도 예측 수행 불가능
+
+### 속성 중분류 코드의 경우
+```{r}
+train <- read.csv('/Users/JGH/Desktop/dacon/Jobcare/raw/train.csv')
+test <- read.csv('/Users/JGH/Desktop/dacon/Jobcare/raw/test.csv')
+```
+
+
+```{r}
+train_m <- train
+for (i in 1:NROW(train_m)){
+  train_m$person_prefer_d_1[i] <- d_code[which(train_m$person_prefer_d_1[i]==d_code$속성_D_코드),'속성_D_중분류코드']
+  train_m$person_prefer_d_2[i] <- d_code[which(train_m$person_prefer_d_2[i]==d_code$속성_D_코드),'속성_D_중분류코드']
+  train_m$person_prefer_d_3[i] <- d_code[which(train_m$person_prefer_d_3[i]==d_code$속성_D_코드),'속성_D_중분류코드']
+  train_m$contents_attribute_d[i] <- d_code[which(train_m$contents_attribute_d[i]==d_code$속성_D_코드),'속성_D_중분류코드']
+  train_m$contents_attribute_l[i] <- l_code[which(train_m$contents_attribute_l[i]==l_code$속성_L_코드),'속성_L_중분류코드']
+}
+
+test_m <- test
+for (i in 1:NROW(test_m)){
+  test_m$person_prefer_d_1[i] <- d_code[which(test_m$person_prefer_d_1[i]==d_code$속성_D_코드),'속성_D_중분류코드']
+  test_m$person_prefer_d_2[i] <- d_code[which(test_m$person_prefer_d_2[i]==d_code$속성_D_코드),'속성_D_중분류코드']
+  test_m$person_prefer_d_3[i] <- d_code[which(test_m$person_prefer_d_3[i]==d_code$속성_D_코드),'속성_D_중분류코드']
+  test_m$contents_attribute_d[i] <- d_code[which(test_m$contents_attribute_d[i]==d_code$속성_D_코드),'속성_D_중분류코드']
+  test_m$contents_attribute_l[i] <- l_code[which(test_m$contents_attribute_l[i]==l_code$속성_L_코드),'속성_L_중분류코드']
+}
+
+for (i in code_list2) {
+  train_m[,i] <- factor(train_m[,i])
+}
+for (i in code_list2) {
+  test_m[,i] <- factor(test_m[,i])
+}
+
+NROW(levels(test_m$person_prefer_d_1)) == sum(levels(test_m$person_prefer_d_1) %in% levels(train_m$person_prefer_d_1))
+NROW(levels(test_m$person_prefer_d_2)) == sum(levels(test_m$person_prefer_d_2) %in% levels(train_m$person_prefer_d_2))
+NROW(levels(test_m$person_prefer_d_3)) == sum(levels(test_m$person_prefer_d_3) %in% levels(train_m$person_prefer_d_3))
+NROW(levels(test_m$contents_attribute_d)) == sum(levels(test_m$contents_attribute_d) %in% levels(train_m$contents_attribute_d))
+NROW(levels(test_m$contents_attribute_l)) == sum(levels(test_m$contents_attribute_l) %in% levels(train_m$contents_attribute_l))
+```
+D와 L 코드가 사용된 변수의 속성 코드를 속성 중분류 코드로 변경하면 예측 수행 불가능  
+**따라서 D와 L 코드가 사용된 변수의 속성 코드를 속성 중분류 코드로 변경**
+
+## 변수 형태 변환
+데이터 설명서에 적합하도록 데이터 형태 변환
+
+* 명목형 변수
+```{r}
+factor_list1 <- c('person_attribute_a','person_prefer_c','person_prefer_d_1','person_prefer_d_2',
+                 'person_prefer_d_3','person_prefer_f','person_prefer_g','person_prefer_h_1',
+                 'person_prefer_h_2','person_prefer_h_3','contents_attribute_i','contents_attribute_a',
+                 'contents_attribute_j_1','contents_attribute_j','contents_attribute_c','contents_attribute_k',
+                 'contents_attribute_l','contents_attribute_d','contents_attribute_m','contents_attribute_h',
+                 'target')
+for (i in factor_list1) {
+  train_m[,i] <- factor(train_m[,i])
+}
+
+factor_list2 <- c('person_attribute_a','person_prefer_c','person_prefer_d_1','person_prefer_d_2',
+                 'person_prefer_d_3','person_prefer_f','person_prefer_g','person_prefer_h_1',
+                 'person_prefer_h_2','person_prefer_h_3','contents_attribute_i','contents_attribute_a',
+                 'contents_attribute_j_1','contents_attribute_j','contents_attribute_c','contents_attribute_k',
+                 'contents_attribute_l','contents_attribute_d','contents_attribute_m','contents_attribute_h')
+for (i in factor_list2) {
+  test_m[,i] <- factor(test_m[,i])
+}
+
+```
+
+* 순서형 변수
+```{r}
+order_list <- c('person_attribute_a_1','person_attribute_b','person_prefer_e','contents_attribute_e')
+
+for (i in order_list) {
+  train_m[,i] <- factor(train_m[,i], order=T)
+}
+
+for (i in order_list) {
+  test_m[,i] <- factor(test_m[,i], order=T)
+}
+```
+
+* 날짜형 변수
+```{r}
+train_m$contents_open_dt <- as.POSIXct(train_m$contents_open_dt, format='%Y.%m.%d %H:%M')
+test_m$contents_open_dt <- as.POSIXct(test_m$contents_open_dt, format='%Y.%m.%d %H:%M')
+```
+
+* 논리형 변수
+```{r}
+# 논리형이지만 분류모델에서 변수로 활용 가능하도록 범주형으로 변환
+logic_list <- c('d_l_match_yn','d_m_match_yn','d_s_match_yn','h_l_match_yn','h_m_match_yn','h_s_match_yn')
+
+for (i in logic_list) {
+  train_m[,i] <- factor(ifelse(train_m[,i]==TRUE,1,0))
+}
+
+for (i in logic_list) {
+  test_m[,i] <- factor(ifelse(test_m[,i]==TRUE,1,0))
+}
+```
+
+```{r}
+str(train_m)
+str(test_m)
+```
+
+
+### 변수 탐색 및 제거
+* 수치형 변수
+```{r}
+diagnose(select_if(train_m,is.numeric))
+diagnose(select_if(test_m,is.numeric))
+```
+
+id, person_rn, contents_rn 변수 제거  
+<a href = "https://github.com/kuma987/DACON-Jobcare/blob/main/%EC%84%A4%EB%AA%85%EC%9E%90%EB%A3%8C.md#%EB%B3%80%EC%88%98-%EC%A0%9C%EA%B1%B0-%EC%9D%B4%EC%9C%A0" target="_blank"> 변수 제거 이유 </a>
+```{r}
+train_m <- train_m[,!names(train_m) %in% c('id','person_rn','contents_rn')]
+test_m <- test_m[,!names(test_m) %in% c('id','person_rn','contents_rn')]
+```
+
+
+* 범주형 변수
+```{r}
+ggplot(pivot_longer(train_m[,factor_list1],everything())) + geom_bar(aes(x=value))+
+  facet_wrap(~name, scales='free_x')
+```
+
+```{r}
+ggplot(pivot_longer(test_m[,factor_list2],everything())) + geom_bar(aes(x=value))+
+  facet_wrap(~name, scales='free_x')
+```
+
+person_prefer_f와 person_prefer_g
+```{r}
+ggplot(train_m) + geom_bar(aes(x=person_prefer_f))
+ggplot(train_m) + geom_bar(aes(x=person_prefer_g))
+ggplot(test_m) + geom_bar(aes(x=person_prefer_f))
+ggplot(test_m) + geom_bar(aes(x=person_prefer_g))
+```
+
+person_prefer_f, person_prefer_g 변수 제거  
+<a href = "https://github.com/kuma987/DACON-Jobcare/blob/main/%EC%84%A4%EB%AA%85%EC%9E%90%EB%A3%8C.md#%EB%B3%80%EC%88%98-%EC%A0%9C%EA%B1%B0-%EC%9D%B4%EC%9C%A0" target="_blank"> 변수 제거 이유 </a>
+```{r}
+train_m <- train_m[,!names(train_m) %in% c('person_prefer_f','person_prefer_g')]
+test_m <- test_m[,!names(test_m) %in% c('person_prefer_f','person_prefer_g')]
+```
+
+목표 변수의 불균형 정도 확인
+```{r}
+ggplot(train_m) + geom_bar(aes(x=target))
+```
+불균형이 존재하지 않기 때문에 추가적인 전처리 없이 다음 단계로 이동
+
+
+* 날짜형 변수
+
+contents_open_dt 변수 제거  
+<a href = "https://github.com/kuma987/DACON-Jobcare/blob/main/%EC%84%A4%EB%AA%85%EC%9E%90%EB%A3%8C.md#%EB%B3%80%EC%88%98-%EC%A0%9C%EA%B1%B0-%EC%9D%B4%EC%9C%A0" target="_blank"> 변수 제거 이유 </a>
+```{r}
+train_m <- train_m[,!names(train_m) %in% 'contents_open_dt']
+test_m <- test_m[,!names(test_m) %in% 'contents_open_dt']
+```
+
+
+# 데이터 분할
+기존의 train 데이터를 훈련:검증 = 7:3 비율로 분할 수행
+```{r}
+set.seed(1234)
+folds <- createFolds(train_m$target, k=10, list=T)
+idx_t <- unname(unlist(folds[1:7]))
+idx_v <- unname(unlist(folds[8:10]))
+train_m_t <- train_m[idx_t,]
+train_m_v <- train_m[idx_v,]
+```
+
+```{r}
+table(train_m$target)
+ggplot(train_m) + geom_bar(aes(x=target,fill=target))
+table(train_m_t$target)
+ggplot(train_m_t) + geom_bar(aes(x=target, fill=target))
+table(train_m_v$target)
+ggplot(train_m_v) + geom_bar(aes(x=target, fill=target))
+```
+분할 이후에도 기존 목표변수의 비율이 깨지지 않았다는 것을 확인 가능
+
+
+# 모델링
+```{r}
+C5.0_model <- C5.0(train_m_t[,!names(train_m_t) %in% 'target'], train_m_t$target, trials=10)
+```
+
+```{r, results='hide'}
+summary(C5.0_model)
+```
+
+<a href = "https://github.com/kuma987/DACON-Jobcare/blob/main/%EC%84%A4%EB%AA%85%EC%9E%90%EB%A3%8C.md#%EB%B3%80%EC%88%98-%EC%A0%9C%EA%B1%B0-%EC%9D%B4%EC%9C%A0" target="_blank"> 모델 설명 </a>
+
+
+# cutoff 함수 생성 
+cutoff에 따라 생성된 모델의 정확도, 정밀도, 재현율, F1-Score를 제시해주는 함수 생성    
+cutoff는 0부터 1까지 0.01 단위로 제시 
+```{r}
+cutoff_df <- function(model, valid_data, range) {
+  prob <- predict(model, valid_data, type='prob')[,2]
+  df <- as.data.frame(matrix(NA, nrow=NROW(range), ncol=5))
+  colnames(df) <- c('Cutoff', 'Accuracy','Precision','Recall','F1')
+  
+  for (i in 1:NROW(range)){
+    pred <- as.factor(ifelse(prob > range[i], 1, 0))
+    accuracy <- confusionMatrix(pred, valid_data$target, positive = '1')$overall['Accuracy']
+    precision <- posPredValue(pred, valid_data$target, positive = '1')
+    recall <- sensitivity(pred, valid_data$target, positive = '1')
+    F1_score <- (2*precision*recall)/(precision+recall)
+    df[i,] <- c(range[i], accuracy, precision, recall, F1_score)
+  }
+  df <- df %>% arrange(desc(F1))
+  return(df)
+}
+```
+
+
+```{r}
+cutoff_range <- seq(0,1,0.01)
+model_df <- cutoff_df(C5.0_model,train_m_v, cutoff_range)
+```
+
+
+```{r}
+model_df[which(model_df$Cutoff==0.5),]
+```
+* 일반적으로 사용되는 0.5를 cutoff로 설정한 경우, 모델의 정확도가 0.6 수준으로 나타남  
+* 훈련용 데이터가 0.8 수준으로 나타난 것에 비해 많이 낮음  
+* 이는 모델에 사용된 변수가 복잡할 뿐 아니라, C5.0 모델의 한계로 나타난 결과
+
+```{r}
+model_df
+cutoff <- model_df[1,1]
+cutoff
+```
+정확도는 떨어져도 DACON의 목적이 F1-score인 만큼, 이에 초점을 맞춰서 F1-score가 가장 높은 경우의 cutoff를 채택  
+* cutoff가 낮은 의미는 오분류를 하더라도 고객이 콘텐츠를 이용하고자 한다는 사실을 놓치지 않는 것을  
+더 중요하게 여기는 예측모델이 생성됨을 의미
+
+# 모델 성능
+생성한 검증용 데이터를 이용하여 모델 성능 평가
+```{r}
+pred_prob <- predict(C5.0_model, train_m_v, type='prob')[,2]
+pred_class <- as.factor(ifelse(pred_prob >= cutoff, 1 ,0))
+caret::confusionMatrix(pred_class, train_m_v$target, positive='1')
+precision <- posPredValue(pred_class, train_m_v$target, positive='1')
+recall <- sensitivity(pred_class, train_m_v$target, positive='1')
+F1_score <- (2*precision*recall)/(precision+recall)
+F1_score
+roc_curve <- prediction(pred_prob, train_m_v$target)
+plot(performance(roc_curve,'tpr','fpr'))
+abline(a=0, b=1,lty=2, col='black')
+```
+
+# 결과
+```{r}
+test_prob <- predict(C5.0_model, test_m, type='prob')[,2]
+target <- as.factor(ifelse(test_prob >= cutoff, 1,0))
+result <- cbind(test,target)[,c('id','target')]
+head(result)
+```
+
+# 결과 생성
+```{r}
+# write.csv(result,'/Users/JGH/Desktop/dacon/Jobcare/result/result.csv', row.names=F)
+```
+
